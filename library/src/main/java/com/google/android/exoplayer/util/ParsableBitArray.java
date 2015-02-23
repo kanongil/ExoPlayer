@@ -98,7 +98,7 @@ public final class ParsableBitArray {
    * @return True if the bit is set. False otherwise.
    */
   public boolean readBit() {
-    return readBits(1) == 1;
+    return ((data[byteOffset] >>> (7 - bitOffset++)) & 1) == 1;
   }
 
   /**
@@ -124,30 +124,21 @@ public final class ParsableBitArray {
 
     long retval = 0;
 
+    int initialBits = Math.min(n, (8 - bitOffset)) % 8;
+    if (initialBits > 0) {
+      n -= initialBits;
+      retval |= (long)readBitsInByte(initialBits) << n;
+    }
+
     // While n >= 8, read whole bytes.
     while (n >= 8) {
       n -= 8;
-      retval |= (readUnsignedByte() << n);
+      retval |= ((data[byteOffset] & 0xFF) << n);
+      byteOffset++;
     }
 
     if (n > 0) {
-      int nextBit = bitOffset + n;
-      byte writeMask = (byte) (0xFF >> (8 - n));
-
-      if (nextBit > 8) {
-        // Combine bits from current byte and next byte.
-        retval |= (((getUnsignedByte(byteOffset) << (nextBit - 8)
-            | (getUnsignedByte(byteOffset + 1) >> (16 - nextBit))) & writeMask));
-        byteOffset++;
-      } else {
-        // Bits to be read only within current byte.
-        retval |= ((getUnsignedByte(byteOffset) >> (8 - nextBit)) & writeMask);
-        if (nextBit == 8) {
-          byteOffset++;
-        }
-      }
-
-      bitOffset = nextBit % 8;
+      retval |= readBitsInByte(n);
     }
 
     return retval;
@@ -172,20 +163,15 @@ public final class ParsableBitArray {
     return ((codeNum % 2) == 0 ? -1 : 1) * ((codeNum + 1) / 2);
   }
 
-  private int readUnsignedByte() {
-    int value;
-    if (bitOffset != 0) {
-      value = ((data[byteOffset] & 0xFF) << bitOffset)
-          | ((data[byteOffset + 1] & 0xFF) >>> (8 - bitOffset));
-    } else {
-      value = data[byteOffset];
+  private int readBitsInByte(int n) {
+    byte readMask = (byte) (0xFF >>> (8 - n));
+    bitOffset += n;
+    int value = (data[byteOffset] >> (8 - bitOffset)) & readMask;
+    if (bitOffset == 8) {
+      byteOffset++;
+      bitOffset = 0;
     }
-    byteOffset++;
-    return value & 0xFF;
-  }
-
-  private int getUnsignedByte(int offset) {
-    return data[offset] & 0xFF;
+    return value;
   }
 
   private int readExpGolombCodeNum() {
